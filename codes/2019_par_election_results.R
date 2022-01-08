@@ -16,12 +16,17 @@ library(sp)
 library(sf)
 library(dplyr)
 
+
+## Getting the current working directory
 wd <- getwd()
+
 ## Extrating the table out of html page
 link <- "https://www.firstpost.com/politics/lok-sabha-election-results-2019-state-constituency-party-wise-winning-candidates-full-winners-list-6697371.html"
 html <- read_html(link)
 table_nodes <- html_nodes(html,"table")
 dt_results <- html_table(table_nodes)
+
+## Converting the extracted table into data table format
 dt <- as.data.table(dt_results)
 
 ## Naming the columns
@@ -36,8 +41,12 @@ rm(html,table_nodes,dt_results)
 ## Cleaning the data
 
 ## Reading the shape files to match PC_NAME ans State names
+
+#########################  Here replace the location of the shapefiles based on the location ############################
 shape <- readOGR("F:/Data_Analytics/Elections/maps-master/parliamentary-constituencies","india_pc_2019")
 names(shape)[1] <- "STATE"
+
+
 ## Standardising the shapefiles data
 shape$PC_NAME <- gsub("(.*)(\\(ST))","\\1",shape$PC_NAME)
 shape$PC_NAME <- gsub("(.*)(\\(SC))","\\1",shape$PC_NAME)
@@ -55,8 +64,12 @@ check_names <- cbind(sort(pc_names_from_data[!(pc_names_from_data %in% pc_names_
 
 check_names <- as.data.table(check_names)
 names(check_names) <- c("data_name","shape_name")
+
+##################################### Give the location based on the working directory ###########################
 fwrite(check_names,"F:/Data_Analytics/Elections/Parliament_2019/old_names.csv")
 
+
+### checking if the names in the columns are similar and if not and making the names in both data similar
 for(i in c(1:61)){
   l <- levenshteinSim(check_names[i,data_name],check_names$shape_name)
   l2 <- max(l)
@@ -82,7 +95,7 @@ pc_names_from_data <- sort(dt$PC_NAME)
 pc_names_from_data[!(pc_names_from_data %in% pc_names_shape_files)]
 
 
-
+##### Calculating the key metrics #####
 p <- as.vector(shape$STATE)
 q <- as.vector(shape$PC_NAME)
 shape_dt <- as.data.table(cbind(p,q))
@@ -121,28 +134,42 @@ dt_missing_data <- dt_missing_data[,.(PC_NAME,STATE,Party,`Winning Candidate`)]
 data <- unique(dt[,.(PC_NAME,Party,STATE,`Winning Candidate`)])
 data <- rbind(dt_missing_data,data)
 unique(data[,Party])
+
+#### Standardizing the Party names #####
 data[,PC_CODE:=paste0(PC_NAME,"_",STATE)]
 data[Party=="YSRC",Party:="YSR Congress"]
 data[Party=="YSRCP",Party:="YSR Congress"]
 data[Party=="CONGRESS",Party:="Congress"]
 data <- unique(data[,.(PC_CODE,Party,`Winning Candidate`)])
 data[,Party_popup:=Party]
+
+
+#### Selecting only few parties to be show and minority parties are shown as others
 major_parties <- c("YSR Congress","TMC","AAP","AIADMK","JDU",
                    "DMK","BJD","BJP","TRS","Congress","CPI",
                    "CPM","Shiv Sena","BSP","TDP","Samajwadi Party")
 
 data[!(Party %in% major_parties),Party:="others"]
-dt1 <- shape
-names(dt1)
+
+
+### Name of the plot
 name <- paste0("2019_India_Parliament_election_Results By SAMINENI")
 
-dt1 <- spTransform(dt1, CRS("+init=epsg:4326"))
 
+
+### Transforming the shape files into the plotting format ### 
+dt1 <- shape
+names(dt1)
+
+dt1 <- spTransform(dt1, CRS("+init=epsg:4326"))
+# Merging the shape files with the data that contains the metrics
 dt1 <- merge(dt1,data,by=c("PC_CODE"),all.x = T)
-
 dt1 <- spTransform(dt1, CRS("+init=epsg:4326"))
 
+### Filtering for the required columns
 dt_data <- dt1@data[,c("PC_CODE","Party","Party_popup","STATE","Winning Candidate")] 
+
+### Defining the columns that are to be show in dynamic visualisation
 popup <- c("PC_CODE","Winning Candidate","Party_popup")
 
 dt1 <- gSimplify(dt1,tol=0.1,topologyPreserve = TRUE)
@@ -156,10 +183,15 @@ party_color <- c("cadetblue1","darkblue","darkblue","gold","green","red",
                  "yellowgreen","gray1")
 
 cuts <- party_name
+
+### Writing the data as geojson file to be read by leaflet package
 writeOGR(dt1,paste0(wd,".geojson"),layer="",driver="GeoJSON")
 
+#### Creatign the plot style
 sty <- styleCat(prop="Party", val=cuts,
                 style.val= party_color, leg="Winner_party_colour (By SCV)")
+
+#### Plotting the data with shape files using the leaflet package
 map <- leaflet(data=paste0("F:/Data_Analytics",name,".geojson"),
                title=name, base.map="positron",style = sty,popup=popup,incl.data=TRUE) 
 
